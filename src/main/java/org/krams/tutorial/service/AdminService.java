@@ -11,8 +11,13 @@ import javax.sql.DataSource;
 import org.apache.log4j.Logger;
 import org.krams.tutorial.domain.AdminPost;
 import org.krams.tutorial.domain.Post;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.SimpleJdbcTemplate;
+import org.springframework.security.acls.domain.BasePermission;
+import org.springframework.security.acls.domain.ObjectIdentityImpl;
+import org.springframework.security.acls.domain.PrincipalSid;
+import org.springframework.security.acls.model.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service("adminService")
 @Transactional
 public class AdminService implements GenericService {
+
+	@Autowired
+	private MutableAclService mutableAclService;
 
 	protected static Logger logger = Logger.getLogger("service");
 	
@@ -109,8 +117,8 @@ public class AdminService implements GenericService {
 			parameters.put("message", post.getMessage());
 			
 			// Save
-			jdbcTemplate.update(sql, parameters);
-			
+			int postId = jdbcTemplate.update(sql, parameters);
+			addPermission(postId, new PrincipalSid("john"), BasePermission.ADMINISTRATION);
 			// Return
 			return true;
 			
@@ -157,8 +165,8 @@ public class AdminService implements GenericService {
 			Object[] parameters = new Object[] {post.getId()};
 			
 			// Delete
-			jdbcTemplate.update(sql, parameters);
-	
+			int postId = jdbcTemplate.update(sql, parameters);
+
 			// Return
 			return true;
 			
@@ -166,6 +174,23 @@ public class AdminService implements GenericService {
 			logger.error(e);
 			return false;
 		}	
+	}
+
+	public void addPermission(Integer postId, Sid recipient, Permission permission) {
+		MutableAcl acl;
+		ObjectIdentity oid = new ObjectIdentityImpl(AdminPost.class, postId);
+
+		try {
+			acl = (MutableAcl) mutableAclService.readAclById(oid);
+		} catch (NotFoundException nfe) {
+			acl = mutableAclService.createAcl(oid);
+		}
+
+		acl.insertAce(acl.getEntries().size(), permission, recipient, true);
+		mutableAclService.updateAcl(acl);
+
+		logger.debug("Added permission " + permission + " for Sid " + recipient + " contact " + postId);
+
 	}
 	
 }

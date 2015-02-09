@@ -11,8 +11,14 @@ import javax.sql.DataSource;
 import org.apache.log4j.Logger;
 import org.krams.tutorial.domain.Post;
 import org.krams.tutorial.domain.PublicPost;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.SimpleJdbcTemplate;
+import org.springframework.security.acls.domain.BasePermission;
+import org.springframework.security.acls.domain.GrantedAuthoritySid;
+import org.springframework.security.acls.domain.ObjectIdentityImpl;
+import org.springframework.security.acls.domain.PrincipalSid;
+import org.springframework.security.acls.model.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class PublicService implements GenericService {
 
 	protected static Logger logger = Logger.getLogger("service");
+
+	@Autowired
+	private MutableAclService mutableAclService;
 	
 	// We'll be calling SQL statements. SimpleJdbcTemplate is a perfect tool.
 	private SimpleJdbcTemplate jdbcTemplate;
@@ -109,8 +118,9 @@ public class PublicService implements GenericService {
 			parameters.put("message", post.getMessage());
 			
 			// Save
-			jdbcTemplate.update(sql, parameters);
-			
+			int postId = jdbcTemplate.update(sql, parameters);
+
+			addPermission(postId, new PrincipalSid("john"), BasePermission.ADMINISTRATION);
 			// Return
 			return true;
 			
@@ -118,6 +128,29 @@ public class PublicService implements GenericService {
 			logger.error(e);
 			return false;
 		}	
+	}
+
+	public void addPermission(Integer postId, Sid recipient, Permission permission) {
+		MutableAcl acl;
+		ObjectIdentity oid = new ObjectIdentityImpl(Post.class, postId);
+
+		try {
+			acl = (MutableAcl) mutableAclService.readAclById(oid);
+		} catch (NotFoundException nfe) {
+			acl = mutableAclService.createAcl(oid);
+		}
+
+		acl.insertAce(acl.getEntries().size(), permission, recipient, true);
+		acl.setOwner(recipient);
+
+		mutableAclService.updateAcl(acl);
+
+		logger.debug("Added permission " + permission + " for Sid " + recipient + " contact " + postId);
+
+//		acl.insertAce(0, BasePermission.ADMINISTRATION, new PrincipalSid(message.getAuthor()), true);
+//		acl.insertAce(1, BasePermission.DELETE, new GrantedAuthoritySid("ROLE_ADMIN"), true);
+//		acl.insertAce(2, BasePermission.READ, new GrantedAuthoritySid("ROLE_USER"), true);
+//		mutableAclService.updateAcl(acl);
 	}
 	
 	public Boolean edit(Post post)  {
